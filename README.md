@@ -4,14 +4,10 @@ TradeAnalyst Screener is a Telegram Mini App designed to help traders quickly sc
 
 ### 📦 Technologies
 
-* `HTML5`
-* `CSS3`
-* `JavaScript`
-* `Telegram Web Apps API`
-* `REST API`
-* `LocalStorage`
-* `Responsive CSS`
-* `SVG Icons`
+* `Main`
+* `ENV`
+* `HTML`
+
 
 ### 🦄 Features
 
