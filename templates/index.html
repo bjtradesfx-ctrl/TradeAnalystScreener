@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Trade Screener</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        /* Global fix to ensure padding stays inside boxes */
+        * {
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-color: #090d16;
+            --card-bg: #111723;
+            --input-bg: #111725;
+            --text-main: #ffffff;
+            --text-muted: #7b88a1;
+            --bullish-color: #22c55e;
+            --bullish-bg: rgba(34, 197, 94, 0.12);
+            --bearish-color: #ef4444;
+            --bearish-bg: rgba(239, 68, 68, 0.12);
+            --border-color: #1e283d;
+            --primary-accent: #8b5cf6;
+            --gold-accent: #f59e0b;
+        }
+
+        body { background-color: var(--bg-color); color: var(--text-main); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; padding-bottom: 80px; }
+        .screen { display: none; padding: 20px; max-width: 800px; margin: auto; }
+        .screen.active { display: block; }
+
+        .header h1 { font-size: 2.2rem; font-weight: 800; margin: 0 0 6px 0; display: flex; align-items: center; gap: 8px;}
+        .header h1 span { background: linear-gradient(90deg, #8b5cf6, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .header h1 .gold-text { background: linear-gradient(90deg, #f59e0b, #fbbf24); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .subtitle { color: var(--text-muted); margin-top: 0; margin-bottom: 24px; font-size: 0.95rem; }
+
+        .search-container { position: relative; margin-bottom: 24px; }
+        .search-container svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; fill: var(--text-muted); }
+        input[type="text"] { width: 100%; padding: 14px 14px 14px 44px; border-radius: 10px; border: 1px solid var(--border-color); background: var(--input-bg); color: var(--text-main); font-size: 0.95rem; box-sizing: border-box; outline: none; }
+        input[type="text"]:focus { border-color: var(--primary-accent); }
+
+        .btn { width: 100%; padding: 14px; border-radius: 10px; border: none; font-size: 1rem; font-weight: 700; cursor: pointer; transition: 0.2s; }
+        .btn-gold { background: linear-gradient(90deg, #f59e0b, #eab308); color: #000; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 16px;}
+        .btn-gold:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3); }
+
+        /* Data Tables */
+        .table-headers { display: grid; grid-template-columns: 2fr 1fr 1fr 40px; padding: 0 16px 12px 20px; color: var(--text-muted); font-size: 0.75rem; font-weight: 700; }
+        .table-headers div:nth-child(2), .table-headers div:nth-child(3) { text-align: center; }
+        .pair-card { display: grid; grid-template-columns: 2fr 1fr 1fr 40px; align-items: center; padding: 16px; background: var(--card-bg); border-radius: 12px; margin-bottom: 12px; border: 1px solid var(--border-color); position: relative; }
+        .pair-info { display: flex; align-items: center; gap: 14px; }
+        .flags-wrapper { position: relative; width: 42px; height: 30px; flex-shrink: 0; }
+        .flag-img { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; position: absolute; border: 2px solid var(--card-bg); }
+        .flag-base { left: 0; z-index: 2; }
+        .flag-quote { left: 16px; z-index: 1; }
+        .crypto-icon { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; }
+        .pair-details { display: flex; flex-direction: column; }
+        .pair-symbol { font-weight: 700; font-size: 1.05rem; line-height: 1.2; }
+        .pair-fullname { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
+
+        .trend-badge { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 6px 14px; border-radius: 8px; font-weight: 600; font-size: 0.85rem; width: 80px; margin: 0 auto; }
+        .trend-badge.bullish { background-color: var(--bullish-bg); color: var(--bullish-color); }
+        .trend-badge.bearish { background-color: var(--bearish-bg); color: var(--bearish-color); }
+
+        .strength-container { display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .strength-bars { display: flex; gap: 3px; }
+        .bar { width: 8px; height: 14px; border-radius: 2px; background: #1e283d; }
+        .card-bullish .bar.filled { background-color: var(--bullish-color); }
+        .card-bearish .bar.filled { background-color: var(--bearish-color); }
+        .strength-percentage { font-weight: 700; font-size: 0.85rem; width: 34px; text-align: right; }
+
+        .action-btn { background: transparent; border: none; cursor: pointer; padding: 6px; border-radius: 6px; }
+        .add-btn { color: var(--primary-accent); font-size: 1.3rem; font-weight: bold; }
+        .remove-btn svg { width: 18px; height: 18px; fill: #ef4444; }
+        .loader { text-align: center; color: var(--text-muted); padding: 40px 0; font-style: italic; }
+
+        /* AI Analysis UI */
+        .ai-top-section { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; flex-wrap: wrap; gap: 16px; }
+        .pro-badge { background: var(--gold-accent); color: #000; padding: 4px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; margin-left: 8px; display: none; vertical-align: middle; }
+        .usage-pill { background: #12101f; border: 1px solid #2d244a; border-radius: 12px; padding: 10px 16px; display: flex; align-items: center; gap: 12px; }
+        .usage-pill svg { width: 20px; height: 20px; fill: #c084fc; }
+        .usage-text-main { font-weight: 700; font-size: 0.9rem; color: #fff; }
+        .usage-text-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+
+        .ai-control-card { background: linear-gradient(145deg, #100d1c, #0a0812); border: 1px solid #2a1f45; border-radius: 16px; padding: 24px; }
+        .control-label { font-weight: 700; font-size: 1rem; margin-bottom: 12px; display: block; }
+        .controls-row { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+        .ai-input-wrapper { position: relative; flex: 1; min-width: 200px; }
+        .ai-input-wrapper .search-icon { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; fill: var(--text-muted); }
+        .ai-input-wrapper input { width: 100%; padding: 16px 44px 16px 48px; border-radius: 12px; border: 1px solid #3c2a68; background: #0c0817; color: white; font-size: 1rem; outline: none; transition: 0.2s; }
+        .ai-input-wrapper input:focus { border-color: #8b5cf6; box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2); }
+        .ai-input-wrapper .clear-icon { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; fill: var(--text-muted); cursor: pointer; display: none; }
+
+        .ai-dropdown { padding: 16px; border-radius: 12px; border: 1px solid #3c2a68; background: #0c0817; color: white; font-size: 0.95rem; outline: none; cursor: pointer; min-width: 160px; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%237b88a1'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; background-size: 20px; }
+
+        .ai-card-footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+        .info-text { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--text-muted); }
+        .info-text svg { width: 16px; height: 16px; fill: var(--text-muted); }
+        .info-text .highlight { color: #c084fc; font-weight: 600; }
+
+        /* Updated AI Button */
+        .generate-btn { background: linear-gradient(90deg, #7c3aed, #4f46e5); color: white; border: none; border-radius: 8px; padding: 10px 18px; font-weight: 700; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s; white-space: nowrap;}
+        .generate-btn:hover { opacity: 0.9; }
+        .generate-btn svg { width: 16px; height: 16px; fill: white; }
+
+        .ai-result-card { background: var(--card-bg); border-radius: 12px; padding: 20px; border: 1px solid var(--border-color); display: none; margin-top: 20px; }
+        .ai-header-res { font-size: 1.2rem; font-weight: 800; margin-bottom: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; }
+        .ai-status { font-weight: 700; font-size: 1.1rem; margin-bottom: 12px; }
+        .ai-text { color: #d1d5db; line-height: 1.6; margin-bottom: 16px; font-size: 0.95rem; }
+        .ai-conf { font-weight: 700; color: var(--text-muted); font-size: 0.9rem; }
+
+        /* PRO Screen Styles */
+        .pro-benefits-card { background: linear-gradient(145deg, #181125, #110d1c); border: 1px solid #3c2a68; border-radius: 16px; padding: 24px; margin-top: 20px;}
+        .pro-benefit-item { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; font-size: 1.05rem; font-weight: 600;}
+        .pro-benefit-item svg { width: 24px; height: 24px; fill: var(--gold-accent); flex-shrink: 0;}
+
+        .active-pro-card { text-align: center; background: linear-gradient(145deg, #22c55e11, #16a34a05); border: 1px solid #16a34a44; border-radius: 16px; padding: 40px 20px; display: none; margin-top: 20px; }
+        .active-pro-card svg { width: 64px; height: 64px; fill: var(--gold-accent); margin-bottom: 16px; }
+
+        /* Bottom Nav */
+        .bottom-nav { position: fixed; bottom: 0; left: 0; width: 100%; background: #0c111c; border-top: 1px solid var(--border-color); display: grid; grid-template-columns: repeat(5, 1fr); padding: 10px 0 16px 0; z-index: 100; }
+        .nav-item { color: var(--text-muted); display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 0.65rem; font-weight: 600; cursor: pointer; transition: color 0.2s;}
+        .nav-item svg { width: 20px; height: 20px; fill: currentColor; transition: fill 0.2s, transform 0.2s;}
+        .nav-item.active { color: var(--primary-accent); }
+        .nav-item.active svg { transform: translateY(-2px); }
+
+        .nav-item.pro-nav { color: #a18a5e; }
+        .nav-item.pro-nav.active { color: var(--gold-accent); }
+
+        /* Mobile specific adjustments to fix the layout bleeding */
+        @media(max-width: 500px){
+            /* Fix the grid to fit tight screens */
+            .screen { padding: 16px 12px; }
+            .table-headers { grid-template-columns: 2fr 1fr 1fr 30px; padding: 0 8px 12px 8px; gap: 4px; }
+            .pair-card { grid-template-columns: 2fr 1fr 1fr 30px; padding: 12px 8px; gap: 4px; }
+
+            /* Shrink text and images slightly */
+            .pair-symbol { font-size: 0.9rem; }
+            .pair-fullname { font-size: 0.7rem; }
+            .trend-badge { padding: 4px 6px; font-size: 0.7rem; width: 100%; min-width: auto; }
+            .strength-bars .bar { width: 6px; height: 12px; }
+            .strength-percentage { font-size: 0.75rem; }
+
+            /* Overlap the flags a bit more */
+            .flags-wrapper { width: 34px; height: 24px; }
+            .flag-img { width: 22px; height: 22px; }
+            .flag-quote { left: 12px; }
+
+            /* AI screen fixes */
+            .ai-card-footer { flex-direction: column; align-items: stretch; gap: 16px; }
+            .generate-btn { width: 100%; justify-content: center; padding: 14px; font-size: 1rem; }
+            .ai-input-wrapper { min-width: 100%; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- FOREX SCREEN -->
+    <div id="screen-forex" class="screen active">
+        <div class="header"><h1>Forex <span>Screener</span></h1><p class="subtitle">Scan the fiat market.</p></div>
+        <div class="search-container">
+            <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+            <input type="text" id="searchInputForex" placeholder="Search pair (e.g. GBPJPY)...">
+        </div>
+        <div class="table-headers"><div>PAIR</div><div>TREND</div><div>STRENGTH</div><div></div></div>
+        <div id="loaderForex" class="loader">Loading...</div><div id="dashboardForex"></div>
+    </div>
+
+    <!-- CRYPTO SCREEN -->
+    <div id="screen-crypto" class="screen">
+        <div class="header"><h1>Crypto <span>Screener</span></h1><p class="subtitle">Scan altcoins & majors.</p></div>
+        <div class="search-container">
+            <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+            <input type="text" id="searchInputCrypto" placeholder="Search crypto (e.g. BTC)...">
+        </div>
+        <div class="table-headers"><div>COIN</div><div>TREND</div><div>STRENGTH</div><div></div></div>
+        <div id="loaderCrypto" class="loader">Loading...</div><div id="dashboardCrypto"></div>
+    </div>
+
+    <!-- AI ANALYSIS SCREEN -->
+    <div id="screen-ai" class="screen">
+        <div class="ai-top-section">
+            <div class="header">
+                <h1 style="margin-bottom: 2px;">AI <span>Analysis</span><span id="aiBadge" class="pro-badge">PRO</span></h1>
+                <p class="subtitle" style="margin-bottom: 0;">Instant market breakdown. Smarter decisions.</p>
+            </div>
+
+            <div class="usage-pill" id="usagePill">
+                <svg viewBox="0 0 24 24"><path d="M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66.19-.34.05-.08.07-.12C8.48 10.94 10.42 7.54 13 3h1l-1 7h3.5c.49 0 .56.33.47.51l-.07.15C12.96 17.55 11 21 11 21z"/></svg>
+                <div>
+                    <div class="usage-text-main"><span id="pillUses">3</span> uses left</div>
+                    <div class="usage-text-sub" id="pillReset">Resets in 6h 0m</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="ai-control-card">
+            <label class="control-label">Enter Pair to Analyze</label>
+            <div class="controls-row">
+                <div class="ai-input-wrapper">
+                    <svg class="search-icon" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                    <input type="text" id="inputAI" placeholder="e.g. EURUSD or SOL" oninput="toggleClearIcon()">
+                    <svg class="clear-icon" id="clearAiInput" onclick="clearAIInput()" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                </div>
+                <select class="ai-dropdown">
+                    <option>Auto (AI Selects)</option><option>Crypto</option><option>Forex</option>
+                </select>
+            </div>
+
+            <div class="ai-card-footer">
+                <div class="info-text">
+                    <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+                    <span>You have <span class="highlight"><span id="infoUses">3</span> uses</span> left.</span>
+                </div>
+                <button class="generate-btn" id="generateBtn" onclick="triggerAIAnalysis()">
+                    <svg viewBox="0 0 24 24"><path d="M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5 .5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z"/></svg>
+                    Generate Analysis
+                </button>
+            </div>
+        </div>
+
+        <div id="loaderAI" class="loader" style="display:none;">Analyzing market structure...</div>
+        <div id="aiResult" class="ai-result-card">
+            <div id="aiPair" class="ai-header-res">BTC/USD</div>
+            <div id="aiStatus" class="ai-status">🟢 Bullish</div>
+            <div id="aiText" class="ai-text">Momentum is increasing and volume is above average.</div>
+            <div id="aiConf" class="ai-conf">Confidence: 87%</div>
+        </div>
+    </div>
+
+    <!-- PRO SUBSCRIPTION SCREEN -->
+    <div id="screen-pro" class="screen">
+        <div class="header">
+            <h1>Unlock <span class="gold-text">PRO</span> ⭐️</h1>
+            <p class="subtitle">Take your trading edge to the next level.</p>
+        </div>
+
+        <!-- Before Subscription -->
+        <div id="proUpgradeContainer">
+            <div class="pro-benefits-card">
+                <div class="pro-benefit-item">
+                    <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                    Unlimited AI Market Analysis
+                </div>
+                <div class="pro-benefit-item">
+                    <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                    Bypass all 6-hour rate limits
+                </div>
+                <div class="pro-benefit-item">
+                    <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                    Exclusive PRO profile badge
+                </div>
+
+                <button class="btn btn-gold" onclick="payWithStars()">
+                    Subscribe for 10 ⭐️
+                </button>
+                <p style="text-align:center; color: var(--text-muted); font-size: 0.8rem; margin-top: 16px;">Payments are securely processed by Telegram.</p>
+            </div>
+        </div>
+
+        <!-- After Subscription -->
+        <div id="proActiveContainer" class="active-pro-card">
+            <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/></svg>
+            <h2>You are a PRO Member!</h2>
+            <p style="color: #94a3b8; margin-top: 8px;">Enjoy your unlimited AI Analysis and premium features.</p>
+        </div>
+    </div>
+
+    <!-- PROFILE SCREEN -->
+    <div id="screen-profile" class="screen">
+        <div class="header"><h1>My <span>Profile</span></h1><p class="subtitle">Manage your account.</p></div>
+        <div class="ai-result-card" style="display:block; text-align:center;">
+            <h2 id="profileName" style="margin: 0 0 4px 0;">Trader</h2>
+            <p id="profileStatus" style="color: var(--text-muted); margin: 0 0 20px 0;">Free Member</p>
+        </div>
+    </div>
+
+    <!-- BOTTOM NAV -->
+    <div class="bottom-nav">
+        <div class="nav-item active" onclick="switchTab('forex')" id="nav-forex">
+            <svg viewBox="0 0 24 24"><path d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/></svg>
+            Forex
+        </div>
+        <div class="nav-item" onclick="switchTab('crypto')" id="nav-crypto">
+            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.31-8.86c-1.77-.45-2.34-.94-2.34-1.67 0-.84.79-1.43 2.1-1.43 1.38 0 1.9.66 1.94 1.64h1.71c-.05-1.34-.87-2.57-2.49-2.97V5h-2.34v1.67c-1.52.32-2.72 1.3-2.72 2.81 0 1.79 1.49 2.69 3.66 3.22 1.95.46 2.34 1.15 2.34 1.87 0 .53-.39 1.39-2.1 1.39-1.6 0-2.23-.71-2.32-1.64H8.04c.1 1.7 1.36 2.66 2.86 2.97V19h2.34v-1.67c1.52-.29 2.72-1.16 2.72-2.76 0-2.22-1.9-2.96-3.65-3.43z"/></svg>
+            Crypto
+        </div>
+        <div class="nav-item" onclick="switchTab('ai')" id="nav-ai">
+            <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 11.25V17H7v-5.75c0-.69-.56-1.25-1.25-1.25S4.5 10.56 4.5 9.88v-2.5c0-.69.56-1.25 1.25-1.25h4.5c.69 0 1.25.56 1.25 1.25v2.5c0 .69-.56 1.25-1.25 1.25zM19 17h-2v-5.75c0-.69-.56-1.25-1.25-1.25s-1.25.56-1.25 1.25v2.5c0 .69-.56 1.25-1.25 1.25H11.5c-.69 0-1.25-.56-1.25-1.25v-2.5c0-.69.56-1.25 1.25-1.25h5.5c.69 0 1.25.56 1.25 1.25v2.5c0 .69-.56 1.25-1.25 1.25z"/></svg>
+            AI Analyze
+        </div>
+        <div class="nav-item pro-nav" onclick="switchTab('pro')" id="nav-pro">
+            <svg viewBox="0 0 24 24"><path d="M12 2l-5.5 9 5.5 3.5L17.5 11 12 2zM3 13.5L2 22h20l-1-8.5-6.5 4.5L12 11l-2.5 7L3 13.5z"/></svg>
+            PRO
+        </div>
+        <div class="nav-item" onclick="switchTab('profile')" id="nav-profile">
+            <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+            Profile
+        </div>
+    </div>
+
+    <script>
+        // Init Telegram
+        let tg = window.Telegram ? window.Telegram.WebApp : null;
+        if (tg) {
+            tg.expand();
+            if(tg.initDataUnsafe && tg.initDataUnsafe.user) {
+                document.getElementById('profileName').innerText = tg.initDataUnsafe.user.first_name;
+            }
+        }
+
+        // ==========================================
+        // THIS FIXES THE "FAILED TO LOAD" ERROR!
+        // ==========================================
+        const API_BASE_URL = "";
+
+        const DEFAULTS = { forex: ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD"], crypto: ["BTC", "ETH", "SOL", "XRP", "BNB"] };
+        let state = { forex: { isSearching: false }, crypto: { isSearching: false } };
+        let timerInterval;
+
+        function toggleClearIcon() {
+            const input = document.getElementById('inputAI');
+            const clearIcon = document.getElementById('clearAiInput');
+            clearIcon.style.display = input.value.trim().length > 0 ? 'block' : 'none';
+        }
+
+        function clearAIInput() {
+            document.getElementById('inputAI').value = '';
+            toggleClearIcon();
+        }
+
+        // TAB LOGIC
+        function switchTab(tabId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById('screen-' + tabId).classList.add('active');
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.getElementById('nav-' + tabId).classList.add('active');
+
+            if(tabId === 'forex' || tabId === 'crypto') fetchMarketData(tabId);
+            if(tabId === 'ai' || tabId === 'pro' || tabId === 'profile') { updateGlobalUI(); }
+        }
+
+        // WATCHLIST LOGIC
+        function getWatchlist(market) { return JSON.parse(localStorage.getItem(`${market}_watchlist`)) || DEFAULTS[market]; }
+        function saveWatchlist(market, list) { localStorage.setItem(`${market}_watchlist`, JSON.stringify(list)); }
+
+        async function fetchMarketData(market, query = "") {
+            document.getElementById(`loader${capitalize(market)}`).style.display = 'block';
+            document.getElementById(`dashboard${capitalize(market)}`).innerHTML = '';
+            try {
+                state[market].isSearching = !!query;
+                const endpoint = query ? `/api/${market}?search=${query}` : `/api/${market}?pairs=${getWatchlist(market).join(",")}`;
+                const response = await fetch(`${API_BASE_URL}${endpoint}`);
+                const result = await response.json();
+                document.getElementById(`loader${capitalize(market)}`).style.display = 'none';
+                renderDashboard(market, result.data);
+            } catch (e) { document.getElementById(`loader${capitalize(market)}`).innerText = "Failed to load."; }
+        }
+
+        function renderDashboard(market, data) {
+            const dash = document.getElementById(`dashboard${capitalize(market)}`);
+            const watch = getWatchlist(market);
+            if (!data || !data.length) { dash.innerHTML = `<div style="text-align:center; padding:20px;">No results</div>`; return; }
+
+            data.forEach(item => {
+                const isBullish = item.trend.toLowerCase() === 'bullish';
+                const trendClass = isBullish ? 'bullish' : 'bearish';
+                const id = market === 'crypto' ? item.symbol : item.pair;
+                const inWatchlist = watch.includes(id);
+
+                let barsHTML = '';
+                const filled = Math.round((item.strength / 100) * 5);
+                for (let i = 0; i < 5; i++) barsHTML += `<div class="bar ${i < filled ? 'filled' : ''}"></div>`;
+
+                let action = state[market].isSearching
+                    ? (inWatchlist ? `<span class="added-icon">✓</span>` : `<button class="action-btn add-btn" onclick="addToWatchlist('${market}', '${id}')">+</button>`)
+                    : `<button class="action-btn remove-btn" onclick="removeFromWatchlist('${market}', '${id}')"><svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>`;
+
+                let gfx = market === 'forex'
+                    ? `<div class="flags-wrapper"><img src="${item.baseFlag}" class="flag-base flag-img"><img src="${item.quoteFlag}" class="flag-quote flag-img"></div>`
+                    : `<img src="${item.icon}" class="crypto-icon">`;
+
+                const card = document.createElement('div');
+                card.className = `pair-card card-${trendClass}`;
+                card.innerHTML = `
+                    <div class="pair-info">${gfx}<div class="pair-details"><span class="pair-symbol">${item.pair}</span><span class="pair-fullname">${item.fullName}</span></div></div>
+                    <div class="trend-container"><div class="trend-badge ${trendClass}"><span>${isBullish ? '↑' : '↓'}</span><span>${item.trend}</span></div></div>
+                    <div class="strength-container"><div class="strength-bars">${barsHTML}</div><span class="strength-percentage">${item.strength}%</span></div>
+                    <div class="action-container">${action}</div>
+                `;
+                dash.appendChild(card);
+            });
+        }
+
+        function addToWatchlist(market, id) { const list = getWatchlist(market); if(!list.includes(id)) { list.push(id); saveWatchlist(market, list); document.getElementById(`searchInput${capitalize(market)}`).value=''; fetchMarketData(market); } }
+        function removeFromWatchlist(market, id) { saveWatchlist(market, getWatchlist(market).filter(x => x !== id)); fetchMarketData(market); }
+
+        function setupSearch(market) {
+            const input = document.getElementById(`searchInput${capitalize(market)}`);
+            input.addEventListener('input', e => { if(!e.target.value.trim()) fetchMarketData(market); });
+            input.addEventListener('keypress', e => { if(e.key === 'Enter' && e.target.value.trim()) fetchMarketData(market, e.target.value.trim()); });
+        }
+        function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+        setupSearch('forex'); setupSearch('crypto'); fetchMarketData('forex');
+
+        // --- GLOBAL UI & AI LIMITS LOGIC ---
+        function isPro() { return localStorage.getItem('is_pro') === 'true'; }
+
+        function checkAILimits() {
+            if (isPro()) return true;
+            let usage = JSON.parse(localStorage.getItem('ai_usage') || '{"count": 0, "timestamp": 0}');
+            if (Date.now() - usage.timestamp > (6 * 60 * 60 * 1000)) {
+                usage = { count: 0, timestamp: Date.now() };
+                localStorage.setItem('ai_usage', JSON.stringify(usage));
+            }
+            return usage.count < 3;
+        }
+
+        function incrementAIUsage() {
+            if (isPro()) return;
+            let usage = JSON.parse(localStorage.getItem('ai_usage') || '{"count": 0, "timestamp": 0}');
+            if(usage.count === 0) usage.timestamp = Date.now();
+            usage.count += 1;
+            localStorage.setItem('ai_usage', JSON.stringify(usage));
+        }
+
+        function startTimer() {
+            if(timerInterval) clearInterval(timerInterval);
+            updateGlobalUI();
+            timerInterval = setInterval(updateGlobalUI, 60000);
+        }
+
+        function updateGlobalUI() {
+            const pro = isPro();
+
+            const aiBadge = document.getElementById('aiBadge');
+            const generateBtn = document.getElementById('generateBtn');
+            const pillUses = document.getElementById('pillUses');
+            const infoUses = document.getElementById('infoUses');
+            const pillReset = document.getElementById('pillReset');
+            const profileStatus = document.getElementById('profileStatus');
+            const proUpgradeCard = document.getElementById('proUpgradeContainer');
+            const proActiveCard = document.getElementById('proActiveContainer');
+
+            if (pro) {
+                pillUses.innerText = "∞";
+                infoUses.innerText = "unlimited";
+                aiBadge.style.display = "inline-block";
+                generateBtn.style.opacity = "1";
+                generateBtn.disabled = false;
+                pillReset.innerText = "Unlimited Access";
+
+                profileStatus.innerText = "PRO Member ⭐️";
+                profileStatus.style.color = "#f59e0b";
+                profileStatus.style.fontWeight = "bold";
+
+                proUpgradeCard.style.display = "none";
+                proActiveCard.style.display = "block";
+            } else {
+                let usage = JSON.parse(localStorage.getItem('ai_usage') || '{"count": 0, "timestamp": 0}');
+                const now = Date.now();
+
+                if (now - usage.timestamp > (6 * 60 * 60 * 1000)) usage.count = 0;
+
+                let remaining = Math.max(0, 3 - usage.count);
+                pillUses.innerText = remaining;
+                infoUses.innerText = remaining;
+
+                generateBtn.style.opacity = remaining === 0 ? "0.5" : "1";
+
+                if (usage.count === 0) {
+                    pillReset.innerText = "Available Now";
+                } else {
+                    const expires = usage.timestamp + (6 * 60 * 60 * 1000);
+                    if (now >= expires) {
+                        pillReset.innerText = "Reset Complete";
+                    } else {
+                        const diff = expires - now;
+                        const h = Math.floor(diff / (1000 * 60 * 60));
+                        const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                        pillReset.innerText = `Resets in ${h}h ${m}m`;
+                    }
+                }
+
+                profileStatus.innerText = "Free Member";
+                profileStatus.style.color = "var(--text-muted)";
+                profileStatus.style.fontWeight = "normal";
+
+                proUpgradeCard.style.display = "block";
+                proActiveCard.style.display = "none";
+            }
+        }
+
+        async function triggerAIAnalysis() {
+            const symbol = document.getElementById('inputAI').value.trim();
+            if (!symbol) return alert("Please enter a pair to analyze.");
+
+            if (!checkAILimits()) {
+                if(tg && tg.showConfirm) {
+                    tg.showConfirm("Limit Reached! Pay 10 ⭐️ to unlock unlimited PRO AI Analysis?", function(c) {
+                        if (c) executePayment();
+                    });
+                } else {
+                    if(confirm("Limit Reached! Pay 10 ⭐️ to unlock unlimited PRO AI Analysis?")) executePayment();
+                }
+                return;
+            }
+
+            document.getElementById('loaderAI').style.display = 'block';
+            document.getElementById('aiResult').style.display = 'none';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/analyze?symbol=${symbol}`);
+                const data = await response.json();
+
+                document.getElementById('loaderAI').style.display = 'none';
+                document.getElementById('aiResult').style.display = 'block';
+
+                document.getElementById('aiPair').innerText = data.pair;
+                document.getElementById('aiStatus').innerText = data.status;
+                document.getElementById('aiText').innerText = data.analysis;
+                document.getElementById('aiConf').innerText = `Confidence: ${data.confidence}%`;
+
+                incrementAIUsage();
+                updateGlobalUI();
+            } catch (e) {
+                document.getElementById('loaderAI').innerText = "Analysis failed. Check symbol.";
+            }
+        }
+
+        function executePayment() {
+            localStorage.setItem('is_pro', 'true');
+            if (tg && tg.showAlert) {
+                tg.showAlert("Payment Successful! You are now a PRO member.");
+            } else {
+                alert("Payment Successful! You are now a PRO member.");
+            }
+            updateGlobalUI();
+
+            if(document.getElementById('screen-pro').classList.contains('active')){
+                switchTab('ai');
+            }
+        }
+
+        function payWithStars() {
+            if (tg && tg.showConfirm) {
+                tg.showConfirm("Pay 10 ⭐️ to unlock unlimited PRO AI Analysis?", function(confirmed) {
+                    if (confirmed) executePayment();
+                });
+            } else {
+                if(confirm("Pay 10 ⭐️ to unlock unlimited PRO AI Analysis?")) executePayment();
+            }
+        }
+
+        updateGlobalUI();
+        startTimer();
+    </script>
+</body>
+</html>
